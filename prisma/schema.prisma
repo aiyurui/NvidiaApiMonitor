@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      String   @default("ADMIN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ApiKey {
+  id           String        @id @default(cuid())
+  name         String
+  key          String        @unique
+  baseUrl      String        @default("https://integrate.api.nvidia.com/v1")
+  enabled      Boolean       @default(true)
+  priority     Int           @default(0)
+  cooledUntil  DateTime?
+  lastUsedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  healthChecks HealthCheck[]
+}
+
+model Model {
+  id              String        @id @default(cuid())
+  modelId         String        @unique
+  name            String
+  description     String?
+  contextLength   Int?
+  supportsVision  Boolean       @default(false)
+  supportsTools   Boolean       @default(false)
+  supportsJson    Boolean       @default(false)
+  isSpecialized   Boolean       @default(false)
+  specializedTags String        @default("[]")
+  isActive        Boolean       @default(true)
+  discoveredAt    DateTime      @default(now())
+  lastSeenAt      DateTime      @default(now())
+  removedAt       DateTime?
+  lastProbeAt    DateTime?
+  lastProbeOk    Boolean?
+  lastProbeCode  Int?
+  lastProbeMs    Int?
+  lastProbeError String?
+  /// 健康检查连续超时次数：达到阈值(3)时把模型标记为不可用（lastProbeOk=false）。
+  /// 同步探测成功（模型确实有响应）时立即清零并恢复可用。
+  consecutiveTimeouts Int  @default(0)
+  /// 被标记不可用的原因（仅用于展示；不影响探测字段 lastProbeError 的语义）
+  downReason          String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  healthChecks    HealthCheck[]
+}
+
+/// 每次后台任务的运行结果（kind: sync = 模型同步+探测，health = 全量健康检测）
+model SyncRun {
+  id           String   @id @default(cuid())
+  kind         String   @default("sync")
+  ok           Boolean  @default(true)
+  /** 任务进行中标记：开始时写 true，结束时置 false。卡死时前端可看到"执行中"过久 */
+  running      Boolean  @default(false)
+  startedAt    DateTime
+  finishedAt   DateTime
+  durationMs   Int      @default(0)
+  addedCount   Int      @default(0)
+  updatedCount Int      @default(0)
+  removedCount Int      @default(0)
+  probeOk      Int      @default(0)
+  probeDown    Int      @default(0)
+  checkedCount Int      @default(0)
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([kind, createdAt])
+}
+
+model HealthCheck {
+  id           String   @id @default(cuid())
+  modelId      String
+  model        Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  apiKeyId     String
+  apiKey       ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  testCaseId   String?
+  ttftMs       Int
+  latencyMs    Int
+  tokensPerSec Float
+  outputTokens Int      @default(0)
+  success      Boolean
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([modelId, createdAt])
+}
+
+model ManualScore {
+  id        String   @id @default(cuid())
+  modelId   String   @unique
+  score     Int
+  note      String?
+  updatedAt DateTime @updatedAt
+}
+
+model TestCase {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  messages    String
+  maxTokens   Int      @default(50)
+  temperature Float    @default(0.7)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Settings {
+  id                String   @id @default("singleton")
+  syncIntervalHours Int      @default(6)
+  healthIntervalMin Int      @default(30)
+  defaultReasoning  Boolean  @default(false)
+  filterKeywords    String   @default("[\"safety\",\"moderation\",\"guard\",\"filter\",\"content-safety\",\"llama-guard\",\"nemo-guard\"]")
+  blacklistModelIds String   @default("[]")
+  scoringWeights    String   @default("{\"context\":1,\"vision\":1,\"tools\":1,\"json\":1,\"reasoning\":1,\"code\":0.5,\"multilingual\":0.5,\"longContext\":0.5,\"availability\":1.5}")
+  updatedAt         DateTime @updatedAt
+}

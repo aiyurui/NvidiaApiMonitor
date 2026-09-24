@@ -1,0 +1,58 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+# 构建缓存的历史副本（排查/重建时用改名代替删除留下的）
+/.next-*/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+.env
+
+# 容器首次启动自动生成的密钥文件（含 ENCRYPTION_KEY，绝不能进版本库）
+.secrets.env
+**/.secrets.env
+
+# 本地临时验证目录
+.tmp-verify/
+
+# WorkBuddy 会话数据（含项目笔记、本机路径与部署环境信息，不进版本库）
+.workbuddy/
+
+# 打包归档 / 本地构建产物
+# 注意：dist/ 里的源码包是把文档一起打进去的，历史包里可能残留本机或部署环境路径
+/dist/
+dist/
+
+# sqlite
+*.db*
+*.db-journal
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

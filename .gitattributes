@@ -1,0 +1,32 @@
+# 统一行尾：仓库内一律 LF。
+#
+# 为什么必须有这个文件：Windows 上 `core.autocrlf=true` 时，checkout 会把文本文件
+# 转成 CRLF。若 `deploy/*.sh` 被 CRLF 化再传到 Linux/NAS 上执行，shebang 会变成
+#   #!/usr/bin/env bash\r
+# 直接报 `/bin/sh^M: bad interpreter: No such file or directory` —— 而报错完全看不出是行尾问题。
+#
+# 注意：本文件必须在首次 commit 前就存在，否则已经入库的 CRLF 需要重新规范化。
+
+* text=auto eol=lf
+
+# 脚本必须 LF
+*.sh   text eol=lf
+*.bash text eol=lf
+
+# Windows 批处理反而需要 CRLF
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# 二进制 —— 显式标记，避免任何行尾转换
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.db    binary

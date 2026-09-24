@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* 后台与看板共用的基础组件样式，保证各页面排版一致 */
+@layer components {
+  .card {
+    @apply rounded-lg border bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900;
+  }
+  .card-header {
+    @apply flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 dark:border-neutral-800;
+  }
+  .card-title {
+    @apply text-sm font-semibold;
+  }
+  .card-body {
+    @apply p-4;
+  }
+
+  .data-table {
+    @apply w-full min-w-[720px] text-sm;
+  }
+  .data-table thead tr {
+    @apply border-b bg-neutral-50 text-left text-xs text-neutral-500 dark:bg-neutral-800;
+  }
+  .data-table th {
+    @apply whitespace-nowrap px-3 py-2 font-medium;
+  }
+  .data-table td {
+    @apply px-3 py-2 align-middle;
+  }
+  .data-table tbody tr {
+    @apply border-b last:border-b-0 hover:bg-neutral-50 dark:hover:bg-neutral-800;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1 rounded border px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1 rounded bg-black px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply inline-flex items-center justify-center rounded border px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:hover:bg-red-950;
+  }
+
+  .badge {
+    @apply inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs;
+  }
+  .badge-ok {
+    @apply border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-400;
+  }
+  .badge-off {
+    @apply border-neutral-200 bg-neutral-50 text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400;
+  }
+  .badge-warn {
+    @apply border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400;
+  }
+  .badge-info {
+    @apply border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-400;
+  }
+  .badge-danger {
+    @apply border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-400;
+  }
+
+  /* 带状态圆点的徽章：可用/不可用在小屏也清晰 */
+  .badge-dot::before {
+    content: "";
+    @apply mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle;
+  }
+  .badge-ok.badge-dot::before {
+    @apply bg-green-500;
+  }
+  .badge-danger.badge-dot::before {
+    @apply bg-red-500;
+  }
+  .badge-warn.badge-dot::before {
+    @apply bg-amber-500;
+  }
+  .badge-off.badge-dot::before {
+    @apply bg-neutral-400;
+  }
+
+  .field {
+    @apply flex flex-col gap-1 text-sm;
+  }
+  .input {
+    @apply rounded border px-2.5 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900;
+  }
+  .hint {
+    @apply text-xs text-neutral-500;
+  }
+
+  .alert {
+    @apply rounded border px-3 py-2 text-sm;
+  }
+  .alert-error {
+    @apply border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-400;
+  }
+  .alert-ok {
+    @apply border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-400;
+  }
+  .empty-state {
+    @apply rounded-lg border border-dashed p-8 text-center text-sm text-neutral-500 dark:border-neutral-700;
+  }
+}

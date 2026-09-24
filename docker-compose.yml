@@ -1,0 +1,102 @@
+# ============================================================
+# NVIDIA 模型可用性监控 —— Docker Compose 部署
+#
+# 目标路径（群晖 NAS）：/volume1/docker/nvidia-api-monitor
+#
+# ============ 一条命令部署（推荐）============
+#   sh deploy/install.sh
+# 它会把 .env 生成、目录创建、@eaDir 清理、构建、启动、健康等待全部做完。
+#
+# ============ 手工部署（等价，零配置）============
+#   docker compose up -d
+# 没有 .env 也能直接跑：NEXTAUTH_SECRET / ENCRYPTION_KEY / 管理员密码
+# 由容器在首次启动时自动生成，并持久化到 data/.secrets.env 复用；
+# 表结构同步与初始数据写入（管理员/设置/用例/评分）也全自动。
+#
+# 想覆盖默认值就在项目目录建一个 .env（compose 会自动读它做变量替换）：
+#   NEXTAUTH_SECRET=...        留空则自动生成
+#   ENCRYPTION_KEY=...         留空则自动生成
+#   ADMIN_EMAIL=you@example.com
+#   ADMIN_PASSWORD=你的密码     留空则随机生成并打印一次
+#   PORT=3001                  改用别的宿主机端口
+#
+# ⚠️ 三条不能破的约束
+#   1. 单副本。调度是进程内 node-cron，多副本会重复探测 + SQLite 写冲突。
+#      不要加 deploy.replicas，不要跑两个容器指向同一个 data 目录。
+#   2. data 目录必须是本机卷（/volume1 本地存储），
+#      SQLite 放在网络共享（NFS/SMB）上会因文件锁异常而损坏。
+#   3. data 目录要跟数据库一起备份 —— 除了库文件，里面还有 .secrets.env
+#      （含 ENCRYPTION_KEY：丢了它，库里已存的 API Key 就解不开了）。
+#
+# 关于 NEXTAUTH_URL：**不需要配置**。compose 已设 AUTH_TRUST_HOST=1，
+# next-auth 会按请求的 Host / X-Forwarded-Host 推导访问地址，客户端也走相对路径。
+# 因此换 IP、换域名、加 HTTPS 反代都不用重建镜像。
+# 只有想强制固定成某个域名时才需要显式设置 NEXTAUTH_URL。
+# ============================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nvidia-api-monitor:latest
+    container_name: nvidia-api-monitor
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+
+      # 关键：数据库落在挂载卷里，重建容器不丢数据。
+      # 显式覆盖，避免 .env 里留着开发用的 "file:./dev.db" 误写到容器内部。
+      DATABASE_URL: "file:/data/prod.db"
+
+      # 「今日」相关逻辑（清理今日数据、探测结论时效判定）走服务端本地时区。
+      # 容器默认 UTC，不设会导致北京时间 08:00 前被算成"昨天"。
+      TZ: "${TZ:-Asia/Shanghai}"
+
+      # ---- 以下四项留空即自动生成（见 deploy/docker-entrypoint.sh）----
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET:-}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY:-}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL:-}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+      # 想直接给 bcrypt hash 也可以，但它含 `$`，写进 .env 时需要转义成 `$$`
+      ADMIN_PASSWORD_HASH: "${ADMIN_PASSWORD_HASH:-}"
+
+      # 让 next-auth 按请求 Host 推导访问地址 —— NEXTAUTH_URL 因此变成可选。
+      # 若显式设置了 NEXTAUTH_URL，它优先级更高。
+      AUTH_TRUST_HOST: "true"
+      NEXTAUTH_URL: "${NEXTAUTH_URL:-}"
+
+      # 表结构变更后自动同步（幂等）。设为 0 可关闭，改为手动执行。
+      DB_PUSH_ON_START: "${DB_PUSH_ON_START:-1}"
+      # 首次启动（User 表为空）会自动 seed；SEED_FORCE=1 可强制重写管理员
+      SEED_FORCE: "${SEED_FORCE:-0}"
+
+      # ---- 任务调度与上游节流（可选，留空用代码内默认值）----
+      JOB_CONCURRENCY: "${JOB_CONCURRENCY:-}"
+      JOB_INTERVAL_MS: "${JOB_INTERVAL_MS:-}"
+      CONSECUTIVE_TIMEOUT_THRESHOLD: "${CONSECUTIVE_TIMEOUT_THRESHOLD:-}"
+      HEALTH_JOB_BUDGET_MS: "${HEALTH_JOB_BUDGET_MS:-}"
+
+    ports:
+      # 宿主机端口:容器端口。群晖上 3000 被占用时，把左边改成 3001 等空闲端口即可
+      # —— 不需要再同步改任何东西，访问地址会自动跟随。
+      - "${PORT:-3000}:3000"
+
+    volumes:
+      - ./data:/data          # SQLite 库 + .secrets.env（唯一需要备份的目录）
+      - ./backup:/app/backup  # 库快照输出目录
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/models/stats"]
+      interval: 60s
+      timeout: 5s
+      start_period: 90s       # 首次启动要建表/补跑同步，给足冷启动时间
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

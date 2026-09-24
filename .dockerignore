@@ -1,0 +1,70 @@
+# 构建上下文排除项：镜像里只留「能跑起来的最小集合」。
+# 注意数据与密钥一律不进镜像 ——
+#   数据库走 volume 挂到 /data，密钥走 env_file 在运行时注入。
+
+node_modules
+.next
+.next*
+.git
+.github
+.workbuddy
+
+# 本地产物 / 打包归档
+dist
+coverage
+*.log
+npm-debug.log*
+
+# 敏感文件：.env 系列全部排除（.env.example 也在内，镜像不需要它）
+.env
+.env.*
+*.pem
+# 容器自动生成的密钥文件也绝不能烤进镜像（它在 data 卷里，由运行时注入）
+.secrets.env
+**/.secrets.env
+.tmp-verify
+
+# 数据库文件与备份：绝不能烤进镜像
+*.db
+*.db-journal
+*.db.bak-*
+data
+backup
+
+# 工程缓存
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+.vscode
+.idea
+
+# ------------------------------------------------------------
+# 群晖（Synology）自动生成的元数据目录 —— 必须排除
+#
+# DSM 的索引/缩略图服务会在它扫描过的目录里塞 @eaDir。
+# Next.js App Router 会把**任何以 @ 开头的目录当成并行路由插槽**，
+# 于是 src/app/admin/@eaDir 会让 admin 的 layout 类型被要求多一个 eaDir 属性，
+# 类型检查直接失败：
+#   Type error: Type '{ children: ReactNode; }' does not satisfy the constraint 'LayoutProps'.
+#   Property 'eaDir' is missing in type '{ children: ReactNode }' but required in type 'LayoutProps'.
+# 最终表现为 docker build 失败（"Next.js build worker exited with code: 1"）。
+#
+# 这类目录还常含 Thumbs.db 之类的大文件，顺手也让构建上下文小一些。
+# ------------------------------------------------------------
+@eaDir
+**/@eaDir
+@tmp
+**/@tmp
+\#recycle
+**/\#recycle
+@SynoEAStream
+**/@SynoEAStream
+Thumbs.db
+**/Thumbs.db
+desktop.ini
+**/desktop.ini
+.DS_Store
+**/.DS_Store
+
+# 容器定义自身
+Dockerfile
+docker-compose.yml
