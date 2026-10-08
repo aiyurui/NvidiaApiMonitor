@@ -129,5 +129,8 @@ model Settings {
   filterKeywords    String   @default("[\"safety\",\"moderation\",\"guard\",\"filter\",\"content-safety\",\"llama-guard\",\"nemo-guard\"]")
   blacklistModelIds String   @default("[]")
   scoringWeights    String   @default("{\"context\":1,\"vision\":1,\"tools\":1,\"json\":1,\"reasoning\":1,\"code\":0.5,\"multilingual\":0.5,\"longContext\":0.5,\"availability\":1.5}")
+  /// 全局入口密码（bcrypt 哈希）。null = 功能关闭，所有人可直接访问看板；
+  /// 设置后：首页重定向到 /entry，公开 API 返回 401，验证通过种下签名 Cookie。
+  entryPasswordHash String?
   updatedAt         DateTime @updatedAt
 }

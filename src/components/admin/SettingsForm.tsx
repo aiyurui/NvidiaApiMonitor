@@ -9,6 +9,10 @@ export interface SettingsSubmit {
   defaultReasoning: boolean;
   filterKeywords: string[];
   blacklistModelIds: string[];
+  /** 设置/修改入口密码（非空时生效）；与 entryPasswordClear 互斥 */
+  entryPassword?: string;
+  /** true = 清除入口密码（关闭功能） */
+  entryPasswordClear?: boolean;
 }
 
 export default function SettingsForm({
@@ -25,6 +29,8 @@ export default function SettingsForm({
   const [defaultReasoning, setDefaultReasoning] = useState(initial.defaultReasoning);
   const [filterText, setFilterText] = useState(initial.filterKeywords.join(", "));
   const [blacklistText, setBlacklistText] = useState(initial.blacklistModelIds.join("\n"));
+  const [entryPw, setEntryPw] = useState("");
+  const [clearEntryPw, setClearEntryPw] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   function handleSubmit(e: React.FormEvent) {
@@ -41,10 +47,18 @@ export default function SettingsForm({
       nextErrors.healthIntervalMin = "健检间隔必须为整数且 ≥5（分钟）";
     }
 
+    const entryPwTrim = entryPw.trim();
+    if (entryPwTrim !== "" && entryPwTrim.length < 4) {
+      nextErrors.entryPassword = "入口密码至少 4 个字符";
+    }
+    if (entryPwTrim !== "" && clearEntryPw) {
+      nextErrors.entryPassword = "不能同时设置新密码与勾选清除";
+    }
+
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    onSubmit({
+    const values: SettingsSubmit = {
       syncIntervalHours: Number(syncHours),
       healthIntervalMin: Number(healthMin),
       defaultReasoning,
@@ -56,7 +70,10 @@ export default function SettingsForm({
         .split("\n")
         .map((s) => s.trim())
         .filter((s) => s !== ""),
-    });
+    };
+    if (entryPwTrim !== "") values.entryPassword = entryPwTrim;
+    if (clearEntryPw) values.entryPasswordClear = true;
+    onSubmit(values);
   }
 
   return (
@@ -131,6 +148,44 @@ export default function SettingsForm({
             className="input font-mono"
           />
         </label>
+
+        <div className="border-t border-neutral-200 pt-4">
+          <div className="mb-2 flex items-center gap-2 text-sm">
+            <span className="font-medium">全局入口密码</span>
+            <span className={`badge ${initial.entryPasswordEnabled ? "badge-ok" : "badge-off"}`}>
+              {initial.entryPasswordEnabled ? "已启用" : "未启用"}
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="field">
+                <span>新入口密码（留空 = 不修改）</span>
+                <input
+                  type="password"
+                  value={entryPw}
+                  onChange={(e) => setEntryPw(e.target.value)}
+                  placeholder="≥ 4 个字符"
+                  className="input"
+                  autoComplete="new-password"
+                />
+              </label>
+              {errors.entryPassword && (
+                <p className="mt-1 text-xs text-red-600">{errors.entryPassword}</p>
+              )}
+            </div>
+            <label className="flex items-center gap-2 self-end text-sm">
+              <input
+                type="checkbox"
+                checked={clearEntryPw}
+                onChange={(e) => setClearEntryPw(e.target.checked)}
+              />
+              清除入口密码（关闭入口保护）
+            </label>
+          </div>
+          <p className="hint mt-1">
+            启用后：看板访客需先输入入口密码（30 天内免重复输入）；修改密码会使所有已验证的访客重新验证。不影响后台管理员登录。
+          </p>
+        </div>
 
         <div className="flex gap-2">
           <button type="submit" disabled={saving} className="btn-primary">

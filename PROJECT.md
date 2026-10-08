@@ -342,6 +342,7 @@ runInBatches(items, batchSize, intervalMs, run) {
 | `filterKeywords` | safety/moderation/guard/… 7 个 | specialized 判定关键词 |
 | `blacklistModelIds` | `[]` | 黑名单（后台勾选 specialized 时同步写入） |
 | `scoringWeights` | 九维权重 JSON | ⚠️ **仅存储与校验，当前未参与任何计算**（见 §12） |
+| `entryPasswordHash` | `null` | 全局入口密码（bcrypt 哈希）。**null = 功能关闭**；设置后：首页重定向 `/entry`、公开 API 返回 401，验证通过种 30 天签名 Cookie。哈希**绝不外传**（`parseSettings` 只暴露 `entryPasswordEnabled` 布尔开关） |
 
 `getSettings()` 用 `upsert` 而非 `findUniqueOrThrow`，缺行时自动补默认单例——否则 settings 表为空会让调度器启动即崩。
 
@@ -349,17 +350,20 @@ runInBatches(items, batchSize, intervalMs, run) {
 
 ## 7. 关键判定口径（改代码前务必先读）
 
-### 7.1 可用状态只有三态，且以「同步探测 + 是否今天」为准
+### 7.1 可用状态只有三态，且以「同步探测 + 滚动时效窗口」为准
 
 ```ts
-const probedToday = lastProbeAt != null && lastProbeAt >= 今天零点;
+// 时效窗口 validMs = max(24h, syncIntervalHours + 2h)，滚动判定、与自然日无关
+const fresh = isProbeFresh(lastProbeAt, now, validMs); // now - lastProbeAt <= validMs
 
-status = lastProbeOk === true  && probedToday ? "ok"       // 可用
-       : lastProbeOk === false && probedToday ? "down"     // 不可用
+status = lastProbeOk === true  && fresh ? "ok"       // 可用
+       : lastProbeOk === false && fresh ? "down"     // 不可用
        : "untested";                                        // 未测
 ```
 
-**结论有时效性**：非今日的探测结论一律显示「未测」，不得当成当前状态展示。前后台（`/api/models`、`/api/models/stats`）必须用同一段逻辑。
+**结论有时效性（滚动窗口）**：探测结论在「最后一次探测 + validMs」后过期，过期显示「未测/已过期」，不得当成当前状态展示。前后台（`/api/models`、`/api/models/stats`、后台模型页）必须用同一判定。
+
+> ⚠️ 不要改回「按自然日判定」（旧 `isProbedToday`）：自然日基准在 0 点整条跳变，昨天探测的模型会在**过 0 点瞬间集体过期**——表现为"刚过 0 点可用模型被清空，直到下次同步"（默认 6h 间隔下最长空窗 6 小时）。滚动窗口下正常调度的探测永远有效（探测最多只有同步间隔那么旧），调度坏了才按各模型自己的探测时间**错峰**过期。
 
 ### 7.2 单次健检失败**不得**翻转可用状态
 
@@ -436,18 +440,23 @@ NVIDIA 在 Worker 配额满载时会返回 **HTTP 200 + SSE 内 `error`**，形�
 
 ### 8.1 公开只读（无需登录）
 
+> **全局入口密码（`Settings.entryPasswordHash` 非空时生效）**：本组三个 GET 接口会先过 `requireEntryAccess()`（`src/lib/entry-guard.ts`），未解锁一律 401 `{error:"entry password required"}`。守卫在 Node 运行时（页面/路由处理器）做而**不在 middleware**——Edge 中间件读不到数据库，无法判断「入口密码是否已配置」。
+> 解锁方式：`POST /api/entry/verify` 验证通过后种下 `nv-entry-key` Cookie（HMAC-SHA256 签名，密钥复用 `NEXTAUTH_SECRET`，**载荷绑定密码哈希前 12 字符** → 改密码即令旧 Cookie 全部失效），30 天有效。验证接口按 IP 限流：10 分钟内失败 5 次锁定。
+> 不拦的范围：`/entry`、`/api/entry/verify`（验证入口本身）、`/login`（仅登录表单，无数据可泄）、`/admin` 与 `/api/admin/*`（已有 NextAuth 会话守卫）。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/models` | 模型列表。query：`status=ok\|down\|untested`、`capability=vision\|tools\|json`、`sort=score\|availability\|ttft\|tps\|updated`、`order=asc\|desc` |
 | GET | `/api/models/stats` | 统计卡片数据。**显式 `force-dynamic`**（否则生产构建会把它静态化成构建期快照） |
 | GET | `/api/models/<modelId…>/history` | 检测历史趋势。query：`range=7d`（336 条）否则 48 条。modelId 含 `/`，用尾段 catch-all + 派发 |
+| POST | `/api/entry/verify` | 入口密码验证。body `{password}`；成功 200 + Set-Cookie `nv-entry-key`（httpOnly，30 天），失败 401，限流触发 429 |
 
 ### 8.2 需要登录（`/api/admin/*`，未登录返回 401）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/auth/*` | next-auth（csrf / callback / session / signout） |
-| GET · PUT | `/api/admin/settings` | 全局设置。**PUT 后自动 `restartScheduler()` 热重载** |
+| GET · PUT | `/api/admin/settings` | 全局设置。**PUT 后自动 `restartScheduler()` 热重载**。PUT 额外接受 `entryPassword`（非空则 bcrypt 落库，空串视为未提供）与 `entryPasswordClear: true`（置 null 关闭入口保护），二者互斥 |
 | GET | `/api/admin/jobs` | 轻量任务状态（最近两次运行 + 间隔 + 今日计数 + `schedulerActive`），供后台轮询 |
 | POST | `/api/admin/scheduler` | 手动激活调度器（instrumentation 未自动启动时的兜底） |
 | POST | `/api/admin/models/sync` | 手动触发同步 |
@@ -473,8 +482,9 @@ NVIDIA 在 Worker 配额满载时会返回 **HTTP 200 + SSE 内 `error`**，形�
 
 | 路由 | 文件 | 说明 |
 | --- | --- | --- |
-| `/` | `app/page.tsx` | 公开看板：`StatsCards` + `ModelTable` + `ModelDetail`，**30 秒轮询** `/api/models` 与 `/api/models/stats` |
-| `/login` | `app/login/page.tsx` | 登录（走 `auth-client.ts` 的相对路径流程） |
+| `/` | `app/page.tsx` | **服务端守卫包装**：入口密码未解锁时 `redirect("/entry")`，否则渲染 `DashboardClient`（原 784 行客户端看板已整体移至 `components/dashboard/DashboardClient.tsx`）。公开看板：`StatsCards` + `ModelTable` + `ModelDetail`，**30 秒轮询** `/api/models` 与 `/api/models/stats` |
+| `/entry` | `app/entry/page.tsx` | 入口密码验证页（仅在 `entryPasswordHash` 已配置时有意义）。已解锁的访客再次访问会自动跳回目标页 |
+| `/login` | `app/login/page.tsx` | 登录（走 `auth-client.ts` 的相对路径流程）。**不受入口密码拦截**（有意设计，见 §8.1） |
 | `/admin` | `admin/page.tsx` | 总览：调度状态、最近同步/健检、今日轮数、手动触发按钮 |
 | `/admin/models` | `admin/models/page.tsx` | 模型管理（最大的页面，784 行）：筛选、批量触发、specialized 切换 |
 | `/admin/api-keys` | `admin/api-keys/page.tsx` | Key 管理 |
@@ -623,4 +633,4 @@ NEXTAUTH_SECRET=tooshort NODE_ENV=production npx next build
 
 ---
 
-_最后更新：2026-09-24_
+_最后更新：2026-10-09_

@@ -16,6 +16,7 @@
 5. API Key 管理：Key 加密存储（ENCRYPTION_KEY），多 Key 按优先级分池 + 进程内游标轮询，可启停。**本项目不冻结 / 冷却任何 Key**（`cooledUntil` 仅为兼容字段）。
 6. 后台管理：账号登录（失败限流锁定）+ Key 管理 + 模型管理 + 测试用例管理 + 全局设置（保存后调度热重载）。
 7. 定时调度与公开只读 API：单进程内置定时器驱动同步与健检；`/api/models`、`/api/models/stats`、`/api/models/<modelId>/history` 对外只读。
+8. **全局入口密码（可选）**：后台「全局设置」页可设置/清除一个共享入口密码。设置后：看板访客需先在 `/entry` 页输入该密码（30 天内免重复输入；修改密码会使所有已验证访客重新验证），公开 API 对未解锁者返回 401；验证接口按 IP 限流（10 分钟 5 次失败锁定）。不影响管理员登录后台。
 
 ## 环境变量
 
@@ -177,7 +178,7 @@ sh deploy/install.sh            # 或 docker compose up -d --build
 
 Docker 环境下的额外注意：
 
-- **`TZ`**（compose 默认 `Asia/Shanghai`）—— 容器默认 UTC，不设会让「清理今日数据」「探测结论时效」在北京时间 08:00 前算成昨天。
+- **`TZ`**（compose 默认 `Asia/Shanghai`）—— 容器默认 UTC，不设会让「清理今日数据」「今日轮数」等按自然日统计的口径在北京时间 08:00 前算成昨天（可用性判定已改为滚动时效窗口，不再依赖自然日）。
 - **`DATABASE_URL` 由 compose 覆盖为 `file:/data/prod.db`** —— 即使 `.env` 里还留着开发用的 `file:./dev.db` 也不会误写进容器内部。
 - **`data` 必须是本地卷** —— SQLite 放 NFS/SMB 网络共享上会因文件锁异常损坏。
 - **`data` 要和数据库一起备份** —— 除了 `prod.db`，里面还有 `.secrets.env`：丢了 `ENCRYPTION_KEY`，库里已存的 API Key 就解不开了。

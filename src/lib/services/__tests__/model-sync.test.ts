@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   reconcileModels, fetchRemoteModels, syncModels, probeModelAvailability,
-  isProbedToday, assertSafeReconcile,
+  isProbeFresh, probeValidityMs, assertSafeReconcile,
 } from "../model-sync";
 
 describe("reconcileModels", () => {
@@ -151,12 +151,39 @@ describe("probeModelAvailability", () => {
     expect(JSON.parse(String(captured?.body))).toMatchObject({ stream: true, max_tokens: 1 });
   });
 });
-describe("isProbedToday", () => {
-  it("今/昨/null 三态", () => {
+describe("isProbeFresh（滚动时效窗口）", () => {
+  it("窗口内有效 / 超窗口过期 / null 无效", () => {
     const now = new Date("2026-09-21T10:00:00");
-    expect(isProbedToday(new Date("2026-09-21T08:00:00"), now)).toBe(true);
-    expect(isProbedToday(new Date("2026-09-20T23:00:00"), now)).toBe(false);
-    expect(isProbedToday(null, now)).toBe(false);
+    expect(isProbeFresh(new Date("2026-09-20T10:00:01"), now)).toBe(true); // 恰好 24h 内
+    expect(isProbeFresh(new Date("2026-09-20T09:59:59"), now)).toBe(false); // 超 24h
+    expect(isProbeFresh(null, now)).toBe(false);
+  });
+
+  it("跨 0 点不再断崖：昨天探测的模型在午夜后仍有效", () => {
+    // 旧实现 isProbedToday 在此场景会全部判过期（可用模型被清空的根因）
+    const midnight = new Date("2026-09-21T00:00:05");
+    expect(isProbeFresh(new Date("2026-09-20T23:40:00"), midnight)).toBe(true); // 20 分钟前
+  });
+
+  it("窗口可按同步间隔放宽", () => {
+    const now = new Date("2026-09-22T10:00:00");
+    const probeAt = new Date("2026-09-20T20:00:00"); // 38h 前
+    expect(isProbeFresh(probeAt, now)).toBe(false); // 默认 24h 窗口 → 过期
+    expect(isProbeFresh(probeAt, now, 50 * 3_600_000)).toBe(true); // 48h 间隔 → 50h 窗口 → 有效
+  });
+});
+
+describe("probeValidityMs", () => {
+  it("默认 6h 间隔 → 24h 下限", () => {
+    expect(probeValidityMs(6)).toBe(24 * 3_600_000);
+  });
+  it("大间隔按 间隔+2h 放宽", () => {
+    expect(probeValidityMs(48)).toBe(50 * 3_600_000);
+    expect(probeValidityMs(22)).toBe(24 * 3_600_000); // 22+2=24，正好取下限
+  });
+  it("非法值回退默认 6h", () => {
+    expect(probeValidityMs(0)).toBe(24 * 3_600_000);
+    expect(probeValidityMs(Number.NaN)).toBe(24 * 3_600_000);
   });
 });
 

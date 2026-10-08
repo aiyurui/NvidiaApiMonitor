@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hash } from "bcryptjs";
 import { requireAdmin } from "@/lib/admin-guard";
 import { getSettings, parseSettings } from "@/lib/settings";
 import { prisma } from "@/lib/prisma";
@@ -59,6 +60,21 @@ export async function PUT(req: Request) {
   if (body.scoringWeights !== undefined && !isValidWeights(body.scoringWeights)) {
     return NextResponse.json({ error: "invalid scoringWeights" }, { status: 400 });
   }
+  // 入口密码：string（trim 后非空则设置/修改，空串视为未提供）；clear 必须为字面 true
+  if (body.entryPassword !== undefined && typeof body.entryPassword !== "string") {
+    return NextResponse.json({ error: "invalid entryPassword" }, { status: 400 });
+  }
+  const entryPw = body.entryPassword !== undefined ? body.entryPassword.trim() : undefined;
+  if (entryPw !== undefined && entryPw !== "" && entryPw.length < 4) {
+    return NextResponse.json({ error: "入口密码至少 4 个字符" }, { status: 400 });
+  }
+  const entryClear = body.entryPasswordClear === true;
+  if (body.entryPasswordClear !== undefined && !entryClear) {
+    return NextResponse.json({ error: "invalid entryPasswordClear" }, { status: 400 });
+  }
+  if (entryPw && entryClear) {
+    return NextResponse.json({ error: "不能同时设置与清除入口密码" }, { status: 400 });
+  }
 
   // 用 getSettings()（内部 upsert 自愈 + 已 sanitize 权重）而不是
   // `prisma.settings.findUniqueOrThrow`：Settings 表为空时后者直接 500，
@@ -75,6 +91,7 @@ export async function PUT(req: Request) {
   const data: {
     syncIntervalHours?: number; healthIntervalMin?: number; defaultReasoning?: boolean;
     filterKeywords?: string; blacklistModelIds?: string; scoringWeights?: string;
+    entryPasswordHash?: string | null;
   } = {};
   if (body.syncIntervalHours !== undefined) data.syncIntervalHours = body.syncIntervalHours as number;
   if (body.healthIntervalMin !== undefined) data.healthIntervalMin = body.healthIntervalMin as number;
@@ -82,6 +99,8 @@ export async function PUT(req: Request) {
   if (body.filterKeywords !== undefined) data.filterKeywords = JSON.stringify(body.filterKeywords);
   if (body.blacklistModelIds !== undefined) data.blacklistModelIds = JSON.stringify(body.blacklistModelIds);
   if (body.scoringWeights !== undefined) data.scoringWeights = JSON.stringify(mergedWeights);
+  if (entryClear) data.entryPasswordHash = null;
+  else if (entryPw) data.entryPasswordHash = await hash(entryPw, 10);
 
   const updated = await prisma.settings.update({ where: { id: "singleton" }, data });
   const { restartScheduler } = await import("@/lib/scheduler");

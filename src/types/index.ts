@@ -29,6 +29,8 @@ export interface ParsedSettings {
   filterKeywords: string[];
   blacklistModelIds: string[];
   scoringWeights: ScoringWeights;
+  /** 入口密码是否已配置（只暴露开关，绝不外传哈希） */
+  entryPasswordEnabled: boolean;
 }
 
 export type ModelStatus = "ok" | "down" | "untested";

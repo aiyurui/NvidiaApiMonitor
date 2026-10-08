@@ -1,5 +1,6 @@
 import type { ParsedSettings, ScoringWeights } from "@/types";
 import { prisma } from "@/lib/prisma";
+import { probeValidityMs } from "@/lib/services/model-sync";
 
 export const DEFAULT_WEIGHTS: ScoringWeights = {
   context: 1, vision: 1, tools: 1, json: 1, reasoning: 1,
@@ -23,6 +24,8 @@ interface SettingsRow {
   id: string; syncIntervalHours: number; healthIntervalMin: number;
   defaultReasoning: boolean; filterKeywords: string;
   blacklistModelIds: string; scoringWeights: string; updatedAt: Date;
+  /** 可选：旧测试夹具不填；生产行总有该列（null = 未配置入口密码） */
+  entryPasswordHash?: string | null;
 }
 
 function parseStringArray(raw: string, fallback: string[]): string[] {
@@ -50,6 +53,7 @@ export function parseSettings(row: SettingsRow): ParsedSettings {
     filterKeywords: parseStringArray(row.filterKeywords, DEFAULT_KEYWORDS),
     blacklistModelIds: parseStringArray(row.blacklistModelIds, []),
     scoringWeights: weights,
+    entryPasswordEnabled: typeof row.entryPasswordHash === "string" && row.entryPasswordHash !== "",
   };
 }
 
@@ -69,4 +73,14 @@ export async function getSettings(): Promise<ParsedSettings> {
     },
   });
   return parseSettings(row);
+}
+
+/**
+ * 探测结论时效窗口（毫秒）：max(24h, 同步间隔 + 2h)。
+ * 给公开 API（models / stats）的高频轮询用，只读 findUnique、
+ * 不走 getSettings 的 upsert（后者每次读都会写 updatedAt，不能放进 30s 轮询）。
+ */
+export async function getProbeValidityMs(): Promise<number> {
+  const row = await prisma.settings.findUnique({ where: { id: "singleton" } });
+  return probeValidityMs(row?.syncIntervalHours ?? 6);
 }

@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isProbedToday } from "@/lib/services/model-sync";
+import { isProbeFresh } from "@/lib/services/model-sync";
+import { requireEntryAccess } from "@/lib/entry-guard";
+import { getProbeValidityMs } from "@/lib/settings";
 
 /** 可用率统计窗口 */
 const AVAILABILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export async function GET(req: Request) {
+  const entryDenied = await requireEntryAccess(); if (entryDenied) return entryDenied;
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status"); // ok | down | untested
   const capability = searchParams.get("capability"); // vision | tools | json
@@ -53,14 +56,17 @@ export async function GET(req: Request) {
   const ttftAvgMap = new Map(ttftAvg.map((g) => [g.modelId, g._avg.ttftMs]));
   const tpsAvgMap = new Map(tpsAvg.map((g) => [g.modelId, g._avg.tokensPerSec]));
 
+  const validMs = await getProbeValidityMs();
+  const now = new Date();
   const rows = models.map((m) => {
     const latest = m.healthChecks[0] ?? null;
     // 可用状态以「同步探测」(lastProbeOk) 为准；健检(healthCheck)仅用于展示延迟/TPS，不改变可用状态。
-    // 今天同步探测过(lastProbeAt)才区分可用/不可用，否则未测（避免陈旧结论一直显示为可用）。
-    const probedToday = m.lastProbeAt ? isProbedToday(new Date(m.lastProbeAt)) : false;
+    // 探测结论在滚动时效窗口内（max(24h, 同步间隔+2h)）才区分可用/不可用，否则未测
+    // （避免陈旧结论一直显示为可用；滚动窗口消除"过 0 点集体过期"的断崖）。
+    const fresh = isProbeFresh(m.lastProbeAt ? new Date(m.lastProbeAt) : null, now, validMs);
     const modelStatus =
-      m.lastProbeOk === true && probedToday ? "ok"
-        : m.lastProbeOk === false && probedToday ? "down"
+      m.lastProbeOk === true && fresh ? "ok"
+        : m.lastProbeOk === false && fresh ? "down"
         : "untested";
     const checks = totalMap.get(m.id) ?? 0;
     const okChecks = okMap.get(m.id) ?? 0;

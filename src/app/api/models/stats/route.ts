@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isProbedToday } from "@/lib/services/model-sync";
+import { isProbeFresh } from "@/lib/services/model-sync";
+import { requireEntryAccess } from "@/lib/entry-guard";
+import { getProbeValidityMs } from "@/lib/settings";
 
 /**
  * 强制请求时执行。
@@ -15,6 +17,7 @@ export const dynamic = "force-dynamic";
 const AVAILABILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export async function GET() {
+  const entryDenied = await requireEntryAccess(); if (entryDenied) return entryDenied;
   const total = await prisma.model.count({
     where: { isActive: true, isSpecialized: false },
   });
@@ -42,16 +45,19 @@ export async function GET() {
     }),
   ]);
 
+  const validMs = await getProbeValidityMs();
+  const now = new Date();
   let available = 0;
   let down = 0;
   let untested = 0;
   for (const m of models) {
     // 可用状态以「同步探测」(lastProbeOk) 为准；健检(healthCheck)只展示延迟/TPS，不改变可用状态。
-    // 今天同步探测过(lastProbeAt)才区分可用/不可用，否则未测（避免陈旧结论一直显示为可用）。
-    const probedToday = m.lastProbeAt ? isProbedToday(new Date(m.lastProbeAt)) : false;
-    if (m.lastProbeOk === true && probedToday) {
+    // 探测结论在滚动时效窗口内（max(24h, 同步间隔+2h)）才区分可用/不可用，否则未测
+    // （滚动窗口消除"过 0 点集体过期"的断崖，与 /api/models 同一判定）。
+    const fresh = isProbeFresh(m.lastProbeAt ? new Date(m.lastProbeAt) : null, now, validMs);
+    if (m.lastProbeOk === true && fresh) {
       available += 1;
-    } else if (m.lastProbeOk === false && probedToday) {
+    } else if (m.lastProbeOk === false && fresh) {
       down += 1;
     } else {
       untested += 1;

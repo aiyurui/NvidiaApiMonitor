@@ -211,8 +211,33 @@ export async function probeModelAvailability(
     clearTimeout(hardTimer);
   }
 }
-export function isProbedToday(lastProbeAt: Date | null, now = new Date()): boolean {
+/** 探测结论的默认时效窗口（滚动，与自然日无关） */
+export const PROBE_VALIDITY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 探测结论是否仍在时效窗口内（滚动窗口，取代旧的「按自然日 isProbedToday」）。
+ *
+ * 为什么不用"今天"判定：自然日基准在 0 点整条跳变，昨天探测的全部模型会在
+ * 过 0 点的瞬间集体过期（实测表现为"刚过 0 点可用模型清空，直到下次同步"，
+ * 默认间隔下最长空窗 6 小时）。滚动窗口让结论在「最后一次探测 + validMs」时
+ * 才过期：正常调度下探测最多只有同步间隔那么旧，永远有效；调度坏了才逐渐过期，
+ * 且各模型按自己的探测时间错峰过期。
+ */
+export function isProbeFresh(
+  lastProbeAt: Date | null,
+  now = new Date(),
+  validMs: number = PROBE_VALIDITY_MS,
+): boolean {
   if (!lastProbeAt) return false;
-  const d = new Date(now); d.setHours(0, 0, 0, 0);
-  return lastProbeAt >= d;
+  return now.getTime() - new Date(lastProbeAt).getTime() <= validMs;
+}
+
+/**
+ * 由同步间隔推导时效窗口：max(24h, 同步间隔 + 2h)。
+ * 默认 6h 间隔 → 24h 窗口；把间隔调大到 22h 以上时窗口随之放宽，
+ * 保证「按配置正常调度」的探测永远不会被判过期。
+ */
+export function probeValidityMs(syncIntervalHours: number): number {
+  const h = Number.isFinite(syncIntervalHours) && syncIntervalHours > 0 ? syncIntervalHours : 6;
+  return Math.max(24, h + 2) * 3_600_000;
 }

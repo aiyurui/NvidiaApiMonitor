@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/admin/PageHeader";
-import { isProbedToday } from "@/lib/services/model-sync";
+import { isProbeFresh, probeValidityMs } from "@/lib/services/model-sync";
 
 interface LatestCheck {
   success: boolean;
@@ -96,20 +96,21 @@ function nextSyncBoundary(syncHours: number): Date {
 }
 
 /** 最近一次同步 / 探测结果：成功显示「HTTP 码 + 探测耗时」，失败显示返回码或超时。
- *  注意：已下线（isActive=false）或非今日的探测结论一律标「已过期」，
- *  否则模型下线/久未同步后，旧的 200 会被误读为「当前可用」。 */
-function syncResultCell(m: ModelRow): React.ReactNode {
+ *  注意：已下线（isActive=false）或超出时效窗口的探测结论一律标「已过期」，
+ *  否则模型下线/久未同步后，旧的 200 会被误读为「当前可用」。
+ *  时效窗口 = max(24h, 同步间隔+2h)，滚动判定（不再按自然日，消除 0 点断崖）。 */
+function syncResultCell(m: ModelRow, validMs: number): React.ReactNode {
   if (!m.lastProbeAt) return <span className="badge badge-off">未探测</span>;
   const when = new Date(m.lastProbeAt).toLocaleString();
   // 探测结论时效性**优先于**下线原因：模型下线后不再参与同步探测，
   // 若把 downReason 排在前面，一个月前的「健检超时下线」会被永久当作当前状态展示，
   // 且与状态列的「已下线」自相矛盾。
-  const stale = !m.isActive || !isProbedToday(new Date(m.lastProbeAt));
+  const stale = !m.isActive || !isProbeFresh(new Date(m.lastProbeAt), new Date(), validMs);
   if (stale) {
     return (
       <span
         className="badge badge-off whitespace-nowrap"
-        title={`探测时间 ${when} · 结论已过期${m.isActive ? "（非今日探测）" : "（模型已下线）"}`}
+        title={`探测时间 ${when} · 结论已过期${m.isActive ? "（超出时效窗口）" : "（模型已下线）"}`}
       >
         已过期
       </span>
@@ -201,7 +202,7 @@ function RunCard({
   );
 }
 
-function statusCell(m: ModelRow): React.ReactNode {
+function statusCell(m: ModelRow, validMs: number): React.ReactNode {
   if (!m.isActive) {
     return <span className="badge badge-off badge-dot">已下线</span>;
   }
@@ -219,8 +220,8 @@ function statusCell(m: ModelRow): React.ReactNode {
   if (m.lastProbeOk === null || m.lastProbeAt === null) {
     return <span className="badge badge-off badge-dot">未测</span>;
   }
-  const probedToday = isProbedToday(new Date(m.lastProbeAt));
-  if (!probedToday) return <span className="badge badge-off badge-dot">未测</span>;
+  const fresh = isProbeFresh(m.lastProbeAt ? new Date(m.lastProbeAt) : null, new Date(), validMs);
+  if (!fresh) return <span className="badge badge-off badge-dot">未测</span>;
   if (m.lastProbeOk) {
     return <span className="badge badge-ok badge-dot">可用</span>;
   }
@@ -373,6 +374,10 @@ export default function ModelsPage() {
       }),
     [rows, showRemoved, showSpecialized],
   );
+
+  // 探测结论时效窗口：max(24h, 同步间隔+2h)。同步间隔来自 /api/admin/jobs，
+  // 初始 6（默认值）在接口返回前也给出正确的窗口下限。
+  const validMs = probeValidityMs(syncIntervalHours);
 
   async function handleSync() {
     setSyncing(true);
@@ -744,8 +749,8 @@ export default function ModelsPage() {
                     {m.modelId}
                   </div>
                 </td>
-                <td className="whitespace-nowrap">{statusCell(m)}</td>
-                <td>{syncResultCell(m)}</td>
+                <td className="whitespace-nowrap">{statusCell(m, validMs)}</td>
+                <td>{syncResultCell(m, validMs)}</td>
                 <td className="text-right">{perfCell(m)}</td>
                 <td className="text-right">
                   <div className="flex items-center justify-end gap-2 whitespace-nowrap">

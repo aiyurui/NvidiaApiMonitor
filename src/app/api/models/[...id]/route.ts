@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireEntryAccess } from "@/lib/entry-guard";
 
 // Next.js 要求 catch-all 必须是 URL 最后一段，因此无法使用
 // [...id]/history/route.ts（启动即报 Catch-all must be the last part）。
@@ -8,6 +9,7 @@ export async function GET(
   req: Request,
   { params }: { params: { id: string[] } },
 ) {
+  const entryDenied = await requireEntryAccess(); if (entryDenied) return entryDenied;
   const segs = params.id;
   if (segs.length < 2 || segs[segs.length - 1] !== "history") {
     return NextResponse.json({ error: "not found" }, { status: 404 });
