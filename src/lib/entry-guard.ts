@@ -4,7 +4,7 @@
  * 生效范围（Settings.entryPasswordHash 非空时）：
  * - 首页 `/`：未解锁 → 重定向 /entry（见 src/app/page.tsx 的服务端包装）；
  * - 公开 API（/api/models*）：未解锁 → 401 JSON；
- * - 不拦 `/entry`、`/api/entry/verify`（它们就是验证入口本身）、
+ * - 不拦 `/entry`、`/api/entry/verify`（它们就是验证入口本身）、`/api/health`（容器健康检查专用，绝不能被门禁拦住）、
  *   `/login` 与 `/admin`（后者已有 NextAuth 会话守卫，登录表单本身无数据可泄）。
  *
  * 为什么不在 middleware 里做：Edge 中间件读不到数据库，无法判断「入口密码

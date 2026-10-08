@@ -131,7 +131,8 @@ ADMIN_PASSWORD='新密码' SEED_FORCE=1 docker compose up -d --force-recreate
 ```bash
 docker compose ps                    # STATUS 应显示 healthy（冷启动约 60~90 秒）
 docker compose logs -f app           # 跟踪日志
-curl -s localhost:3000/api/models/stats
+curl -s localhost:3000/api/health     # {"ok":true}（该端点不受入口密码门禁；
+                                     #  启用入口密码后 /api/models/stats 未解锁会返回 401）
 ```
 
 日志里看到 `[scheduler] activated` 才算真正就绪 —— 调度是进程内定时器，  

@@ -450,6 +450,7 @@ NVIDIA 在 Worker 配额满载时会返回 **HTTP 200 + SSE 内 `error`**，形�
 | GET | `/api/models/stats` | 统计卡片数据。**显式 `force-dynamic`**（否则生产构建会把它静态化成构建期快照） |
 | GET | `/api/models/<modelId…>/history` | 检测历史趋势。query：`range=7d`（336 条）否则 48 条。modelId 含 `/`，用尾段 catch-all + 派发 |
 | POST | `/api/entry/verify` | 入口密码验证。body `{password}`；成功 200 + Set-Cookie `nv-entry-key`（httpOnly，30 天），失败 401，限流触发 429 |
+| GET | `/api/health` | 容器健康检查（**无门禁**）。ping DB（SELECT 1），正常 200 / DB 挂 503。Dockerfile/compose/install.sh 的健康探测都打这里——不能用 `/api/models/stats` 代替，入口密码启用后它对未解锁访问返回 401 会误判 unhealthy |
 
 ### 8.2 需要登录（`/api/admin/*`，未登录返回 401）
 

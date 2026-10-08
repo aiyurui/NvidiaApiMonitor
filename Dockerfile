@@ -97,7 +97,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000
 HEALTHCHECK --interval=60s --timeout=5s --start-period=90s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:3000/api/models/stats >/dev/null || exit 1
+  CMD curl -fsS http://127.0.0.1:3000/api/health >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "node_modules/next/dist/bin/next", "start", "-H", "0.0.0.0", "-p", "3000"]

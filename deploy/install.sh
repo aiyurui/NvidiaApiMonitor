@@ -221,7 +221,7 @@ echo
 printf '  等待服务就绪（首次启动要建表 + 写入初始数据，约 30~90 秒）'
 READY=0
 for _ in $(seq 1 60); do
-  if $COMPOSE exec -T app curl -fsS http://127.0.0.1:3000/api/models/stats >/dev/null 2>&1; then
+  if $COMPOSE exec -T app curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
     READY=1
     break
   fi

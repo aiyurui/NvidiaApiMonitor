@@ -89,7 +89,9 @@ services:
       - ./backup:/app/backup  # 库快照输出目录
 
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/models/stats"]
+      # 用 /api/health（不受入口密码门禁）：启用入口密码后 /api/models/stats
+      # 对未解锁访问返回 401，拿它做健康检查会把容器误判为 unhealthy。
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
       interval: 60s
       timeout: 5s
       start_period: 90s       # 首次启动要建表/补跑同步，给足冷启动时间
