@@ -25,11 +25,18 @@ interface EntryState {
   hash: string | null;
 }
 
-/** 读 Settings 单例的入口密码哈希；单例不存在（新库）视为未启用，不触发自愈写。 */
+/** 读 Settings 单例的入口密码哈希；单例不存在（新库）视为未启用，不触发自愈写。
+ *  查询失败（如构建期占位库无表）也按「未启用」处理：
+ *  - 门禁的所有消费方都应是 force-dynamic 的动态路由，正常运行期不该走到这里；
+ *  - 即便运行期 DB 故障时误放行，数据 API 也全数 500，无数据可泄。 */
 export async function getEntryState(): Promise<EntryState> {
-  const row = await prisma.settings.findUnique({ where: { id: "singleton" } });
-  const hash = row?.entryPasswordHash ?? null;
-  return { enabled: typeof hash === "string" && hash !== "", hash };
+  try {
+    const row = await prisma.settings.findUnique({ where: { id: "singleton" } });
+    const hash = row?.entryPasswordHash ?? null;
+    return { enabled: typeof hash === "string" && hash !== "", hash };
+  } catch {
+    return { enabled: false, hash: null };
+  }
 }
 
 async function isUnlocked(state: EntryState): Promise<boolean> {

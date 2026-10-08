@@ -4,6 +4,15 @@ import { isProbeFresh } from "@/lib/services/model-sync";
 import { requireEntryAccess } from "@/lib/entry-guard";
 import { getProbeValidityMs } from "@/lib/settings";
 
+/**
+ * 强制请求时执行（与 /api/models/stats 同理）。
+ * 本路由的 GET 现在会先查 Settings（入口门禁 + 探测时效窗口）再查模型表：
+ * 构建期占位库没有任何表，若被 Next 静态求值会抛 P2021（PrismaClientKnownRequestError），
+ * 它**不是** DynamicServerError、不会触发"回退为动态渲染"，而是直接让 next build 失败
+ * （2026-10-09 群晖构建实测踩坑）。必须显式 force-dynamic。
+ */
+export const dynamic = "force-dynamic";
+
 /** 可用率统计窗口 */
 const AVAILABILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
