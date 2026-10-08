@@ -1,106 +1,26 @@
-"use client";
+import { redirect } from "next/navigation";
+import { isEntryUnlocked } from "@/lib/entry-guard";
+import LoginForm from "@/components/LoginForm";
 
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { fetchSessionUser, signInWithCredentials } from "@/lib/auth-client";
+// 入口密码启用时，登录页本身也不允许绕过：/admin 的中间件会把未登录者送来这里，
+// 若这里不设防，陌生人无需入口密码就能看到登录表单。未解锁 → 先去 /entry，
+// 验证后带 callbackUrl 原路返回，登录链路完整保留。
+// （管理员已登录的会话由 entry-guard 视为已解锁，不会困在 /entry。）
+//
+// force-dynamic：守卫依赖数据库与 Cookie，绝不能被构建期静态化
+// （静态化后运行期将永远执行不到守卫逻辑）。
+export const dynamic = "force-dynamic";
 
-/** 只允许站内相对路径，避免开放重定向。
- *  注意必须同时拒绝反斜杠：浏览器会把 `/\evil.com` 规范化为 `//evil.com`（协议相对 URL），
- *  从而绕过「以 // 开头即拒绝」的判断跳到外站。 */
-function safeTarget(raw: string | null): string {
-  if (!raw) return "/admin";
-  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "/admin";
-  return raw;
-}
-
-function LoginForm() {
-  const params = useSearchParams();
-  const target = safeTarget(params.get("callbackUrl"));
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  // 已登录时直接进后台，避免"登录成功却停在登录页"
-  useEffect(() => {
-    let alive = true;
-    fetchSessionUser()
-      .then((user) => {
-        if (alive && user) window.location.replace(target);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [target]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      const res = await signInWithCredentials({ email, password, callbackUrl: target });
-      if (res.error) {
-        setError("邮箱或密码错误");
-        setLoading(false);
-        return;
-      }
-      // 硬跳转而非 router.push：整页加载一定带上刚写入的 session cookie，
-      // 规避客户端路由缓存与 middleware 之间的竞态（表现为登录成功却不跳转）
-      window.location.replace(target);
-    } catch {
-      setError("网络异常，请重试");
-      setLoading(false);
-    }
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: { callbackUrl?: string };
+}) {
+  if (!(await isEntryUnlocked())) {
+    const next = searchParams?.callbackUrl
+      ? `/login?callbackUrl=${encodeURIComponent(searchParams.callbackUrl)}`
+      : "/login";
+    redirect(`/entry?next=${encodeURIComponent(next)}`);
   }
-
-  return (
-    <main className="mx-auto flex min-h-screen max-w-sm items-center p-6">
-      <form onSubmit={handleSubmit} className="card w-full">
-        <div className="card-header">
-          <span className="card-title">登录后台</span>
-        </div>
-        <div className="card-body flex flex-col gap-3">
-          {error ? <p className="alert alert-error">{error}</p> : null}
-          <label className="field">
-            <span>邮箱</span>
-            <input
-              type="email"
-              required
-              placeholder="邮箱"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="input"
-              autoComplete="username"
-            />
-          </label>
-          <label className="field">
-            <span>密码</span>
-            <input
-              type="password"
-              required
-              placeholder="密码"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="input"
-              autoComplete="current-password"
-            />
-          </label>
-          <button type="submit" disabled={loading} className="btn-primary mt-1">
-            {loading ? "登录中…" : "登录"}
-          </button>
-          <p className="hint">登录失败 5 次会临时锁定。</p>
-        </div>
-      </form>
-    </main>
-  );
-}
-
-export default function LoginPage() {
-  // /login 在 /admin 布局之外，这里单独包一层 Suspense 以满足 useSearchParams 的要求
-  return (
-    <Suspense fallback={<main className="p-6 text-sm text-neutral-500">加载中…</main>}>
-      <LoginForm />
-    </Suspense>
-  );
+  return <LoginForm />;
 }

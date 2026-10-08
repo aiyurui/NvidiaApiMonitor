@@ -183,7 +183,7 @@ export default function SettingsForm({
             </label>
           </div>
           <p className="hint mt-1">
-            启用后：看板访客需先输入入口密码（30 天内免重复输入）；修改密码会使所有已验证的访客重新验证。不影响后台管理员登录。
+            启用后：所有访客（含 /admin、/login）需先在验证页输入入口密码；已登录的管理员会话自动免验证。修改密码会使已验证的访客重新验证。
           </p>
         </div>
 

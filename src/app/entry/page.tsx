@@ -85,7 +85,6 @@ function EntryForm() {
             <button type="submit" disabled={loading} className="btn-primary mt-1">
               {loading ? "验证中…" : "进入"}
             </button>
-            <p className="hint">本站已启用入口密码保护。验证一次后 30 天内免再次输入；修改入口密码后需重新验证。</p>
           </div>
         </form>
       )}

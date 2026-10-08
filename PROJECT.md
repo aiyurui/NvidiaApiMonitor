@@ -441,8 +441,8 @@ NVIDIA 在 Worker 配额满载时会返回 **HTTP 200 + SSE 内 `error`**，形�
 ### 8.1 公开只读（无需登录）
 
 > **全局入口密码（`Settings.entryPasswordHash` 非空时生效）**：本组三个 GET 接口会先过 `requireEntryAccess()`（`src/lib/entry-guard.ts`），未解锁一律 401 `{error:"entry password required"}`。守卫在 Node 运行时（页面/路由处理器）做而**不在 middleware**——Edge 中间件读不到数据库，无法判断「入口密码是否已配置」。
-> 解锁方式：`POST /api/entry/verify` 验证通过后种下 `nv-entry-key` Cookie（HMAC-SHA256 签名，密钥复用 `NEXTAUTH_SECRET`，**载荷绑定密码哈希前 12 字符** → 改密码即令旧 Cookie 全部失效），30 天有效。验证接口按 IP 限流：10 分钟内失败 5 次锁定。
-> 不拦的范围：`/entry`、`/api/entry/verify`（验证入口本身）、`/login`（仅登录表单，无数据可泄）、`/admin` 与 `/api/admin/*`（已有 NextAuth 会话守卫）。
+> **解锁条件（满足其一）**：① `nv-entry-key` 签名 Cookie（HMAC-SHA256，密钥复用 `NEXTAUTH_SECRET`，**载荷绑定密码哈希前 12 字符** → 改密码即令旧 Cookie 全部失效），30 天有效；② **管理员已登录的 NextAuth 会话**（后台总览页会调 `/api/models/stats`，会话放行后不致 401；入口密码挡的是无账号访客，不拦管理员）。
+> **覆盖面**：首页 `/`、公开 API、`/login`（服务端守卫包装，堵住"经 /admin → /login 绕过入口密码"的路径）；`/admin` 由中间件要求会话、而会话 ⇒ 已解锁，无需单独拦截。**永不拦截**：`/entry`、`/api/entry/verify`、`/api/auth/*`（登录流程必需）、`/api/health`。验证接口按 IP 限流：10 分钟内失败 5 次锁定。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
