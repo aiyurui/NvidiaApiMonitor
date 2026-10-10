@@ -9,21 +9,17 @@ import {
 } from "@/lib/entry-token";
 import {
   clearEntryFailures,
+  clientKeyFromHeaders,
   isEntryBlocked,
+  isEntryBlockedGlobal,
   recordEntryFailure,
+  recordEntryFailureGlobal,
 } from "@/lib/entry-throttle";
 
 /** 入口 Cookie 保活时长：30 天（与 next-auth 会话默认时长一致）。
  *  ⚠️ 不导出：App Router 的 route 文件只允许导出 HTTP 方法与特定配置字段，
  *  额外导出会违反 Next 生成的路由类型契约、卡 next build。 */
 const ENTRY_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
-
-function clientIp(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for");
-  const first = xff?.split(",")[0]?.trim();
-  if (first) return first;
-  return req.headers.get("x-real-ip")?.trim() || "local";
-}
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as { password?: unknown } | null;
@@ -37,8 +33,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "entry password not configured" }, { status: 400 });
   }
 
-  const ip = clientIp(req);
-  if (isEntryBlocked(ip)) {
+  // 双层限流：per-IP（经反代时取可信头）+ 全局失败预算（防直连端口伪造头轮换"IP"）
+  const ip = clientKeyFromHeaders((n) => req.headers.get(n));
+  if (isEntryBlocked(ip) || isEntryBlockedGlobal()) {
     return NextResponse.json(
       { error: "尝试次数过多，请 10 分钟后再试" },
       { status: 429 },
@@ -48,6 +45,7 @@ export async function POST(req: Request) {
   const ok = await compare(body.password, hash);
   if (!ok) {
     recordEntryFailure(ip);
+    recordEntryFailureGlobal();
     return NextResponse.json({ error: "入口密码错误" }, { status: 401 });
   }
 
